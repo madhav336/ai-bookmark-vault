@@ -1,4 +1,4 @@
-# AI Bookmark Vault 🚀
+# AI Bookmark Vault 
 
 AI Bookmark Vault is a full-stack AI-powered bookmark management platform that helps users save, organize, and retrieve useful online resources intelligently.
 
