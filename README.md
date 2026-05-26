@@ -19,7 +19,7 @@ Instead of storing plain browser bookmarks, the platform enhances saved resource
 
 ---
 
-## 🛠 Tech Stack
+##  Tech Stack
 
 ### Frontend
 - Next.js
