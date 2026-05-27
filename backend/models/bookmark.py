@@ -11,3 +11,7 @@ class Bookmark(Base):
     title = Column(String)
 
     url = Column(String)
+
+    summary = Column(String,nullable=True)
+
+    category=Column(String,nullable=True)
