@@ -157,7 +157,7 @@ export default function Home() {
     setLoading(true);
     try {
       const token = await getToken();
-      await fetch(`${API_BASE}/bookmarks`, {
+      const res = await fetch(`${API_BASE}/bookmarks`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -165,11 +165,23 @@ export default function Home() {
         },
         body: JSON.stringify({ title, url }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new Error("waking_up");
+        }
+        throw new Error("failed");
+      }
+      
       setTitle(""); setUrl("");
       setIsDialogOpen(false);
       fetchBookmarks();
-    } catch {
-      setError("Could not connect to the server. Please try again.");
+    } catch (err: any) {
+      if (err?.message === "waking_up") {
+        setError("The server is waking up (Render free tier cold start). Please wait a few seconds and try again.");
+      } else {
+        setError("Could not connect to the server. If the backend is sleeping, it may take up to a minute to wake up. Please try again shortly.");
+      }
     } finally {
       setLoading(false);
     }
@@ -182,7 +194,7 @@ export default function Home() {
     setLoading(true);
     try {
       const token = await getToken();
-      await fetch(`${API_BASE}/bookmarks/${editingId}`, {
+      const res = await fetch(`${API_BASE}/bookmarks/${editingId}`, {
         method: "PUT",
         headers: { 
           "Content-Type": "application/json",
@@ -190,11 +202,23 @@ export default function Home() {
         },
         body: JSON.stringify({ title, url }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new Error("waking_up");
+        }
+        throw new Error("failed");
+      }
+      
       setTitle(""); setUrl(""); setEditingId(null);
       setIsDialogOpen(false);
       fetchBookmarks();
-    } catch {
-      setError("Could not connect to the server. Please try again.");
+    } catch (err: any) {
+      if (err?.message === "waking_up") {
+        setError("The server is waking up (Render free tier cold start). Please wait a few seconds and try again.");
+      } else {
+        setError("Could not connect to the server. If the backend is sleeping, it may take up to a minute to wake up. Please try again shortly.");
+      }
     } finally {
       setLoading(false);
     }
@@ -204,15 +228,16 @@ export default function Home() {
     if (deleteTargetId === null) return;
     try {
       const token = await getToken();
-      await fetch(`${API_BASE}/bookmarks/${deleteTargetId}`, { 
+      const res = await fetch(`${API_BASE}/bookmarks/${deleteTargetId}`, { 
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error();
       setDeleteTargetId(null);
       fetchBookmarks();
     } catch {
       setDeleteTargetId(null);
-      setError("Delete failed. Please try again.");
+      setError("Delete failed. The server might be waking up; please try again shortly.");
     }
   }
 
