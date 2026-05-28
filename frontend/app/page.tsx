@@ -69,6 +69,18 @@ export default function Home() {
   
   const { getToken } = useAuth();
   
+  const [isMobile, setIsMobile] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    function checkRes() {
+      setIsMobile(window.innerWidth <= 768);
+    }
+    checkRes();
+    window.addEventListener("resize", checkRes);
+    return () => window.removeEventListener("resize", checkRes);
+  }, []);
+  
   // ── Swipe-to-refresh Touch Gesture Hooks ─────────────────────────────────
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [pullOffset, setPullOffset] = useState(0);
@@ -325,7 +337,7 @@ export default function Home() {
 
   const dialogStyle: React.CSSProperties = {
     background: "#111118", border: "1px solid rgba(139,92,246,0.25)",
-    borderRadius: "20px", padding: "32px", width: "100%", maxWidth: "460px",
+    borderRadius: "20px", padding: isMobile ? "20px" : "32px", width: "90%", maxWidth: "460px",
     boxShadow: "0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(139,92,246,0.08)",
     animation: "dialogSlideIn 0.25s ease",
   };
@@ -365,12 +377,26 @@ export default function Home() {
       <Show when="signed-in">
         <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
 
+          {/* Mobile sidebar overlay back-drop */}
+          {isMobile && isSidebarOpen && (
+            <div 
+              onClick={() => setIsSidebarOpen(false)}
+              style={{
+                position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+                backdropFilter: "blur(4px)", zIndex: 99,
+              }}
+            />
+          )}
+
           {/* ══════════════════════════════ SIDEBAR ══════════════════════════════ */}
           <aside style={{
             width: "260px", minHeight: "100vh",
             background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)",
             display: "flex", flexDirection: "column",
-            position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 10,
+            position: "fixed", top: 0, 
+            left: isMobile ? (isSidebarOpen ? 0 : "-260px") : 0, 
+            bottom: 0, zIndex: 100,
+            transition: "left 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
           }}>
 
             {/* Logo and User Profile */}
@@ -427,7 +453,7 @@ export default function Home() {
           {categories.map(cat => (
             <button
               key={cat}
-              onClick={() => setActiveCategory(cat)}
+              onClick={() => { setActiveCategory(cat); if (isMobile) setIsSidebarOpen(false); }}
               style={{
                 width: "100%", display: "flex", alignItems: "center", gap: "10px",
                 padding: "9px 12px", borderRadius: "10px", border: "none",
@@ -476,12 +502,13 @@ export default function Home() {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         style={{ 
-          marginLeft: "260px", 
+          marginLeft: isMobile ? 0 : "260px", 
           flex: 1, 
           display: "flex", 
           flexDirection: "column", 
           minHeight: "100vh",
-          position: "relative"
+          position: "relative",
+          width: isMobile ? "100%" : "calc(100% - 260px)"
         }}
       >
         {/* Swipe-to-refresh premium visual spinner */}
@@ -527,8 +554,25 @@ export default function Home() {
           position: "sticky", top: 0, zIndex: 9,
           background: "rgba(7,7,10,0.85)", backdropFilter: "blur(14px)",
           borderBottom: "1px solid var(--border)",
-          padding: "14px 32px", display: "flex", alignItems: "center", gap: "16px",
+          padding: isMobile ? "10px 16px" : "14px 32px", 
+          display: "flex", alignItems: "center", gap: "10px",
         }}>
+          {isMobile && (
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              style={{
+                background: "none", border: "none", color: "var(--text)", 
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "6px", marginRight: "4px"
+              }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+          )}
           <div style={{ position: "relative", flex: 1, maxWidth: "460px" }}>
             <svg style={{ position: "absolute", left: "13px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }}
               width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -549,7 +593,7 @@ export default function Home() {
         </div>
 
         {/* Page content */}
-        <div style={{ padding: "32px", flex: 1 }}>
+        <div style={{ padding: isMobile ? "16px" : "32px", flex: 1 }}>
 
           {/* Heading */}
           <div style={{ marginBottom: "24px" }}>
@@ -585,7 +629,11 @@ export default function Home() {
           )}
 
           {/* Bookmark grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "16px" }}>
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(340px, 1fr))", 
+            gap: "16px" 
+          }}>
             {visible.map((bookmark, index) => (
               <div
                 key={bookmark.id}
