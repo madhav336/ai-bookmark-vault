@@ -11,6 +11,7 @@ from google.genai import types
 
 from database import engine, Base, SessionLocal
 from models.bookmark import Bookmark
+from auth import get_current_user
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -93,9 +94,11 @@ def get_bookmarks(
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
 ):
     return (
         db.query(Bookmark)
+        .filter(Bookmark.user_id == user_id)
         .order_by(Bookmark.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -104,8 +107,9 @@ def get_bookmarks(
 
 
 @app.get("/search")
-def search_bookmarks(q: str, db: Session = Depends(get_db)):
+def search_bookmarks(q: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     results = db.query(Bookmark).filter(
+        Bookmark.user_id == user_id,
         or_(
             Bookmark.title.ilike(f"%{q}%"),
             Bookmark.url.ilike(f"%{q}%"),
@@ -117,13 +121,14 @@ def search_bookmarks(q: str, db: Session = Depends(get_db)):
 
 
 @app.post("/bookmarks")
-def create_bookmark(bookmark: BookmarkSchema, db: Session = Depends(get_db)):
+def create_bookmark(bookmark: BookmarkSchema, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     ai = generate_summary(bookmark.title, bookmark.url)
     new_bookmark = Bookmark(
         title=bookmark.title,
         url=bookmark.url,
         summary=ai["summary"],
         category=ai["category"],
+        user_id=user_id
     )
     db.add(new_bookmark)
     db.commit()
@@ -132,8 +137,8 @@ def create_bookmark(bookmark: BookmarkSchema, db: Session = Depends(get_db)):
 
 
 @app.delete("/bookmarks/{bookmark_id}")
-def delete_bookmark(bookmark_id: int, db: Session = Depends(get_db)):
-    bookmark = db.query(Bookmark).filter(Bookmark.id == bookmark_id).first()
+def delete_bookmark(bookmark_id: int, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
+    bookmark = db.query(Bookmark).filter(Bookmark.id == bookmark_id, Bookmark.user_id == user_id).first()
     if not bookmark:
         raise HTTPException(status_code=404, detail="Bookmark not found")
     db.delete(bookmark)
@@ -146,8 +151,9 @@ def update_bookmark(
     bookmark_id: int,
     updated: BookmarkSchema,
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
 ):
-    bookmark = db.query(Bookmark).filter(Bookmark.id == bookmark_id).first()
+    bookmark = db.query(Bookmark).filter(Bookmark.id == bookmark_id, Bookmark.user_id == user_id).first()
     if not bookmark:
         raise HTTPException(status_code=404, detail="Bookmark not found")
     bookmark.title = updated.title

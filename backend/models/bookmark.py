@@ -17,4 +17,6 @@ class Bookmark(Base):
 
     category = Column(String, nullable=True)
 
+    user_id = Column(String, index=True, nullable=True) # nullable initially for migration
+
     created_at = Column(DateTime, server_default=func.now())

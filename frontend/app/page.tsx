@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { Show, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 
 type Bookmark = {
   id: number;
@@ -12,8 +13,16 @@ type Bookmark = {
 };
 
 function timeAgo(dateStr: string): string {
+  if (!dateStr) return "";
+  
+  // If the ISO date string has no timezone suffix, force it to be treated as UTC
+  let formattedStr = dateStr;
+  if (!dateStr.endsWith("Z") && !dateStr.includes("+") && !/-\d{2}:\d{2}$/.test(dateStr)) {
+    formattedStr = `${dateStr}Z`;
+  }
+
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
+  const then = new Date(formattedStr).getTime();
   const diff = Math.max(0, now - then);
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
@@ -57,25 +66,87 @@ export default function Home() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [activeCategory, setActiveCategory] = useState("All");
+  
+  const { getToken } = useAuth();
+  
+  // ── Swipe-to-refresh Touch Gesture Hooks ─────────────────────────────────
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [pullOffset, setPullOffset] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    if (window.scrollY === 0 && !isRefreshing) {
+      setTouchStart(e.touches[0].clientY);
+    }
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (touchStart === null || isRefreshing) return;
+    const rawDistance = e.touches[0].clientY - touchStart;
+    if (rawDistance > 0) {
+      // Damped pull math to make the pull feel premium and resistive
+      const pull = Math.min(80, Math.pow(rawDistance, 0.85));
+      setPullOffset(pull);
+      // Prevent browser default pull-to-refresh if we are handling it
+      if (e.cancelable) e.preventDefault();
+    }
+  }
+
+  async function handleTouchEnd() {
+    if (touchStart === null || isRefreshing) return;
+    setTouchStart(null);
+
+    if (pullOffset >= 55) {
+      setIsRefreshing(true);
+      setPullOffset(55); // Hold indicator at nice spinning offset
+      try {
+        await fetchBookmarks();
+      } catch {
+        // silently catch
+      } finally {
+        // Smoothly animate retraction
+        setTimeout(() => {
+          setIsRefreshing(false);
+          setPullOffset(0);
+        }, 600);
+      }
+    } else {
+      setPullOffset(0);
+    }
+  }
 
   async function fetchBookmarks() {
     try {
-      const res = await fetch(`${API_BASE}/bookmarks`);
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/bookmarks`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const data = await res.json();
-      setBookmarks(data);
+      if (res.ok && Array.isArray(data)) {
+        setBookmarks(data);
+      } else {
+        setBookmarks([]);
+      }
     } catch {
-      // silently ignore — backend may not be ready yet
+      setBookmarks([]);
     }
   }
 
   async function searchBookmarks(query: string) {
     if (!query.trim()) { fetchBookmarks(); return; }
     try {
-      const res = await fetch(`${API_BASE}/search?q=${query}`);
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/search?q=${query}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const data = await res.json();
-      setBookmarks(data);
+      if (res.ok && Array.isArray(data)) {
+        setBookmarks(data);
+      } else {
+        setBookmarks([]);
+      }
     } catch {
-      // silently ignore transient errors
+      setBookmarks([]);
     }
   }
 
@@ -85,9 +156,13 @@ export default function Home() {
     setError("");
     setLoading(true);
     try {
+      const token = await getToken();
       await fetch(`${API_BASE}/bookmarks`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
         body: JSON.stringify({ title, url }),
       });
       setTitle(""); setUrl("");
@@ -105,9 +180,13 @@ export default function Home() {
     try { new URL(url); } catch { setError("Please enter a valid URL (e.g. https://example.com)."); return; }
     setError("");
     try {
+      const token = await getToken();
       await fetch(`${API_BASE}/bookmarks/${editingId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ title, url }),
       });
       setTitle(""); setUrl(""); setEditingId(null);
@@ -121,7 +200,11 @@ export default function Home() {
   async function confirmDelete() {
     if (deleteTargetId === null) return;
     try {
-      await fetch(`${API_BASE}/bookmarks/${deleteTargetId}`, { method: "DELETE" });
+      const token = await getToken();
+      await fetch(`${API_BASE}/bookmarks/${deleteTargetId}`, { 
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       setDeleteTargetId(null);
       fetchBookmarks();
     } catch {
@@ -144,6 +227,7 @@ export default function Home() {
     setTitle(""); setUrl(""); setError("");
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   useEffect(() => { fetchBookmarks(); }, []);
 
   // Debounce search — wait 300ms after the user stops typing before hitting the backend
@@ -164,9 +248,11 @@ export default function Home() {
     if (isDialogOpen) { window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }
   }, [isDialogOpen]);
 
-  const categories = ["All", ...Array.from(new Set(bookmarks.map(b => b.category).filter(Boolean)))];
+  const safeBookmarks = Array.isArray(bookmarks) ? bookmarks : [];
 
-  const visible = bookmarks.filter(b =>
+  const categories = ["All", ...Array.from(new Set(safeBookmarks.map(b => b.category).filter(Boolean)))];
+
+  const visible = safeBookmarks.filter(b =>
     (activeCategory === "All" || b.category === activeCategory)
   );
 
@@ -222,33 +308,64 @@ export default function Home() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
-
-      {/* ══════════════════════════════ SIDEBAR ══════════════════════════════ */}
-      <aside style={{
-        width: "260px", minHeight: "100vh",
-        background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)",
-        display: "flex", flexDirection: "column",
-        position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 10,
-      }}>
-
-        {/* Logo */}
-        <div style={{ padding: "28px 24px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+    <>
+      {/* ══════════════════════════════ LOGIN SCREEN ══════════════════════════ */}
+      <Show when="signed-out">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg)" }}>
+          <div style={{ textAlign: "center", background: "var(--surface)", padding: "48px", borderRadius: "20px", border: "1px solid var(--border)", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
             <div style={{
-              width: "36px", height: "36px",
+              width: "56px", height: "56px", margin: "0 auto 20px",
               background: "linear-gradient(135deg, #8b5cf6, #6366f1)",
-              borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center",
+              borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </div>
-            <div>
-              <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>AI Bookmark Vault</div>
-            </div>
+            <h1 style={{ fontSize: "28px", fontWeight: "bold", color: "var(--text)", marginBottom: "12px", letterSpacing: "-0.5px" }}>AI Bookmark Vault</h1>
+            <p style={{ color: "var(--text-muted)", marginBottom: "32px", fontSize: "15px" }}>Sign in to manage your private bookmarks.</p>
+            <SignInButton mode="modal">
+              <button style={{...btnPrimary, margin: "0 auto", padding: "12px 32px", fontSize: "15px"}}>
+                Sign In to Vault
+              </button>
+            </SignInButton>
           </div>
         </div>
+      </Show>
+
+      {/* ══════════════════════════════ APP SHELL ═════════════════════════════ */}
+      <Show when="signed-in">
+        <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
+
+          {/* ══════════════════════════════ SIDEBAR ══════════════════════════════ */}
+          <aside style={{
+            width: "260px", minHeight: "100vh",
+            background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)",
+            display: "flex", flexDirection: "column",
+            position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 10,
+          }}>
+
+            {/* Logo and User Profile */}
+            <div style={{ padding: "28px 24px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{
+                    width: "36px", height: "36px",
+                    background: "linear-gradient(135deg, #8b5cf6, #6366f1)",
+                    borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>AI Bookmark Vault</div>
+                  </div>
+                </div>
+                {/* Clerk User Button */}
+                <UserButton appearance={{ elements: { userButtonAvatarBox: { width: "32px", height: "32px" } } }} />
+              </div>
+            </div>
 
         {/* Add button */}
         <div style={{ padding: "0 16px 20px" }}>
@@ -303,7 +420,7 @@ export default function Home() {
                 background: activeCategory === cat ? "rgba(139,92,246,0.18)" : "rgba(255,255,255,0.05)",
                 color: activeCategory === cat ? "#a78bfa" : "var(--text-muted)", fontWeight: 500,
               }}>
-                {cat === "All" ? bookmarks.length : bookmarks.filter(b => b.category === cat).length}
+                {cat === "All" ? safeBookmarks.length : safeBookmarks.filter(b => b.category === cat).length}
               </span>
             </button>
           ))}
@@ -314,7 +431,7 @@ export default function Home() {
           <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 600, letterSpacing: "0.05em" }}>VAULT STATS</div>
           <div style={{ display: "flex", gap: "8px" }}>
             <div style={{ flex: 1, background: "var(--surface)", borderRadius: "10px", padding: "10px", textAlign: "center" }}>
-              <div style={{ fontSize: "20px", fontWeight: 800, color: "var(--text)" }}>{bookmarks.length}</div>
+              <div style={{ fontSize: "20px", fontWeight: 800, color: "var(--text)" }}>{safeBookmarks.length}</div>
               <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px", fontWeight: 500 }}>Saved</div>
             </div>
             <div style={{ flex: 1, background: "var(--surface)", borderRadius: "10px", padding: "10px", textAlign: "center" }}>
@@ -326,7 +443,56 @@ export default function Home() {
       </aside>
 
       {/* ══════════════════════════════ MAIN ══════════════════════════════════ */}
-      <main style={{ marginLeft: "260px", flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <main 
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ 
+          marginLeft: "260px", 
+          flex: 1, 
+          display: "flex", 
+          flexDirection: "column", 
+          minHeight: "100vh",
+          position: "relative"
+        }}
+      >
+        {/* Swipe-to-refresh premium visual spinner */}
+        <div style={{
+          position: "absolute",
+          top: `${pullOffset - 40}px`,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "36px",
+          height: "36px",
+          borderRadius: "50%",
+          background: "#161622",
+          border: "1px solid rgba(139, 92, 246, 0.3)",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.5), 0 0 12px rgba(139, 92, 246, 0.25)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99,
+          opacity: pullOffset > 10 ? Math.min(1, (pullOffset - 10) / 30) : 0,
+          transition: isRefreshing ? "top 0.15s ease" : "none",
+          pointerEvents: "none",
+        }}>
+          <svg 
+            width="18" 
+            height="18" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="#8b5cf6" 
+            strokeWidth="3" 
+            strokeLinecap="round" 
+            style={{
+              transform: `rotate(${pullOffset * 6}deg)`,
+              animation: isRefreshing ? "spin 0.8s linear infinite" : "none",
+              transition: isRefreshing ? "none" : "transform 0.05s linear",
+            }}
+          >
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+          </svg>
+        </div>
 
         {/* Sticky top bar */}
         <div style={{
@@ -631,6 +797,8 @@ export default function Home() {
           </div>
         </div>
       )}
-    </div>
+        </div>
+      </Show>
+    </>
   );
 }
