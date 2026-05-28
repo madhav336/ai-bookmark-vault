@@ -1,7 +1,6 @@
 # AI Bookmark Vault
 
 AI Bookmark Vault is a full-stack AI-powered bookmark management platform that helps users save, organize, and retrieve useful online resources intelligently.
-
 Instead of storing plain browser bookmarks, the platform enhances saved resources using AI-generated summaries and structured organization to create a personal knowledge vault.
 
 Live Demo: [https://ai-bookmark-vault.vercel.app](https://ai-bookmark-vault.vercel.app)
