@@ -156,12 +156,19 @@ def update_bookmark(
     bookmark = db.query(Bookmark).filter(Bookmark.id == bookmark_id, Bookmark.user_id == user_id).first()
     if not bookmark:
         raise HTTPException(status_code=404, detail="Bookmark not found")
+    
+    # Only regenerate AI summary and category if the URL has actually changed
+    # or if the current summary is missing/unavailable.
+    url_changed = bookmark.url != updated.url or not bookmark.summary or bookmark.summary == "Summary unavailable."
+    
     bookmark.title = updated.title
     bookmark.url = updated.url
-    # Regenerate AI summary and category with the new title/URL
-    ai = generate_summary(updated.title, updated.url)
-    bookmark.summary = ai["summary"]
-    bookmark.category = ai["category"]
+    
+    if url_changed:
+        ai = generate_summary(updated.title, updated.url)
+        bookmark.summary = ai["summary"]
+        bookmark.category = ai["category"]
+        
     db.commit()
     db.refresh(bookmark)
     return {"message": "Bookmark updated", "data": bookmark}
