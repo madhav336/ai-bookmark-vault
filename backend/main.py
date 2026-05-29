@@ -176,9 +176,15 @@ def update_bookmark(
         # User override takes priority over AI suggestion
         bookmark.category = user_category or ai["category"]
     else:
-        # URL unchanged — only update category if the user explicitly chose one
+        # URL unchanged — check what the user wants for category
         if user_category:
+            # User picked a specific category
             bookmark.category = user_category
+        else:
+            # User explicitly selected "Auto (AI picks)" — re-run AI for category only,
+            # keeping the existing summary since the URL/content hasn't changed
+            ai = generate_summary(updated.title, updated.url)
+            bookmark.category = ai["category"]
 
     db.commit()
     db.refresh(bookmark)
