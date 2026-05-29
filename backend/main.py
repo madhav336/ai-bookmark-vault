@@ -42,6 +42,7 @@ def get_db():
 class BookmarkSchema(BaseModel):
     title: str
     url: str
+    category: str | None = None  # Optional override; None = let AI decide
 
 # Pydantic model used as the structured output schema for Gemini
 class BookmarkAI(BaseModel):
@@ -123,11 +124,13 @@ def search_bookmarks(q: str, db: Session = Depends(get_db), user_id: str = Depen
 @app.post("/bookmarks")
 def create_bookmark(bookmark: BookmarkSchema, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     ai = generate_summary(bookmark.title, bookmark.url)
+    # Respect user-supplied category if it's a recognised value; else fall back to AI suggestion
+    user_category = bookmark.category if bookmark.category in VALID_CATEGORIES else None
     new_bookmark = Bookmark(
         title=bookmark.title,
         url=bookmark.url,
         summary=ai["summary"],
-        category=ai["category"],
+        category=user_category or ai["category"],
         user_id=user_id
     )
     db.add(new_bookmark)
@@ -156,19 +159,27 @@ def update_bookmark(
     bookmark = db.query(Bookmark).filter(Bookmark.id == bookmark_id, Bookmark.user_id == user_id).first()
     if not bookmark:
         raise HTTPException(status_code=404, detail="Bookmark not found")
-    
+
+    # Validate user-supplied category override
+    user_category = updated.category if updated.category in VALID_CATEGORIES else None
+
     # Only regenerate AI summary and category if the URL has actually changed
     # or if the current summary is missing/unavailable.
     url_changed = bookmark.url != updated.url or not bookmark.summary or bookmark.summary == "Summary unavailable."
-    
+
     bookmark.title = updated.title
     bookmark.url = updated.url
-    
+
     if url_changed:
         ai = generate_summary(updated.title, updated.url)
         bookmark.summary = ai["summary"]
-        bookmark.category = ai["category"]
-        
+        # User override takes priority over AI suggestion
+        bookmark.category = user_category or ai["category"]
+    else:
+        # URL unchanged — only update category if the user explicitly chose one
+        if user_category:
+            bookmark.category = user_category
+
     db.commit()
     db.refresh(bookmark)
     return {"message": "Bookmark updated", "data": bookmark}

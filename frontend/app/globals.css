@@ -30,6 +30,16 @@ body {
 ::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
+/* Native select — dark theme override */
+select {
+  background-color: var(--surface);
+  color-scheme: dark;
+}
+select option {
+  background-color: #1a1a26;
+  color: var(--text);
+}
+
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0); }

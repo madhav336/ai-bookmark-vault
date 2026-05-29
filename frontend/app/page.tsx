@@ -35,6 +35,11 @@ function timeAgo(dateStr: string): string {
   return `${months}mo ago`;
 }
 
+const VALID_CATEGORIES = [
+  "Backend", "Frontend", "AI/ML", "DevOps", "Database",
+  "Mobile", "Security", "Cloud", "Productivity", "Programming", "Other",
+];
+
 const CATEGORY_COLORS: Record<string, string> = {
   "Backend":     "#3b82f6",
   "Frontend":    "#f43f5e",
@@ -66,6 +71,8 @@ export default function Home() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [activeCategory, setActiveCategory] = useState("All");
+  // null = "Auto (AI)" — let backend Gemini decide
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
   const { getToken } = useAuth();
   
@@ -175,7 +182,7 @@ export default function Home() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}` 
         },
-        body: JSON.stringify({ title, url }),
+        body: JSON.stringify({ title, url, category: selectedCategory }),
       });
       
       if (!res.ok) {
@@ -212,7 +219,7 @@ export default function Home() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ title, url }),
+        body: JSON.stringify({ title, url, category: selectedCategory }),
       });
       
       if (!res.ok) {
@@ -257,6 +264,8 @@ export default function Home() {
     setTitle(bookmark.title);
     setUrl(bookmark.url);
     setEditingId(bookmark.id);
+    // Pre-select the current category so the user can see and optionally change it
+    setSelectedCategory(bookmark.category || null);
     setError("");
     setIsDialogOpen(true);
   }
@@ -265,6 +274,7 @@ export default function Home() {
     setIsDialogOpen(false);
     setEditingId(null);
     setTitle(""); setUrl(""); setError("");
+    setSelectedCategory(null);
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
@@ -783,7 +793,7 @@ export default function Home() {
             </div>
 
             {/* URL field */}
-            <div style={{ marginBottom: "20px" }}>
+            <div style={{ marginBottom: "16px" }}>
               <label style={labelStyle}>URL</label>
               <input
                 placeholder="https://..."
@@ -794,6 +804,43 @@ export default function Home() {
                 onFocus={e => e.target.style.borderColor = "var(--accent)"}
                 onBlur={e => e.target.style.borderColor = "var(--border)"}
               />
+            </div>
+
+            {/* Category override */}
+            <div style={{ marginBottom: "20px" }}>
+              <label style={labelStyle}>CATEGORY</label>
+              <div style={{ position: "relative" }}>
+                <select
+                  value={selectedCategory ?? ""}
+                  onChange={e => setSelectedCategory(e.target.value || null)}
+                  style={{
+                    ...inputStyle,
+                    appearance: "none",
+                    paddingRight: "36px",
+                    cursor: "pointer",
+                    color: selectedCategory ? getCategoryColor(selectedCategory) : "var(--text-muted)",
+                  }}
+                  onFocus={e => e.target.style.borderColor = "var(--accent)"}
+                  onBlur={e => e.target.style.borderColor = "var(--border)"}
+                >
+                  <option value="">✦ Auto (AI picks)</option>
+                  {VALID_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+                {/* Chevron icon */}
+                <svg
+                  style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--text-muted)" }}
+                  width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+              {!selectedCategory && (
+                <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "5px", marginBottom: 0 }}>
+                  Gemini will assign a category automatically.
+                </p>
+              )}
             </div>
 
             {error && (
